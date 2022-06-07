@@ -2,7 +2,7 @@ import numpy as np
 import scipy.special as sp
 from scipy.optimize import root
 
-from newLipid import Lipid
+from Lipid import Lipid
 
 #############################################################
 #
