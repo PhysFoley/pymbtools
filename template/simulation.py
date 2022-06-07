@@ -141,6 +141,7 @@ def main():
             print("Starting warmup integration:")
             print("Proceeding to main integration if minimum distance > {} sigma".format(min_dist) )
         
+        # set the integrator to capped gradient descent
         system.integrator.set_steepest_descent(f_max=0, gamma=10,
                                        max_displacement=min_dist*0.01)
         # gradient descent until particles are separated by at least min_dist
@@ -150,7 +151,7 @@ def main():
             act_min_dist = system.analysis.min_dist()
             if verb: print("Running steepest descent warm-up, current min_dist = {}".format(act_min_dist))
         
-        system.integrator.set_vv()
+        system.integrator.set_vv() # Switch to velocity-verlet integrator
         system.time_step = time_step # Switch to main integration time step
         
         if verb:

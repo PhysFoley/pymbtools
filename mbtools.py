@@ -26,7 +26,7 @@ def cylindricalBilayer(system, r, z0=2.0, ao=1.163, ai=None, verbose=False):
     ri = r - z0
     ro = r + z0
     
-    #number if lipids to place in inner and outer leaflets
+    #number of lipids to place in inner and outer leaflets
     ni = int(2.*np.pi*ri/di)
     no = int(2.*np.pi*ro/do)
     
@@ -43,7 +43,7 @@ def cylindricalBilayer(system, r, z0=2.0, ao=1.163, ai=None, verbose=False):
     outAngle = []
     inAngle = []
     
-    if verbose: print("Placing Inner Leaflet")
+    if verbose: print("Calculating Inner Leaflet Positions")
     for z in np.linspace(0,Lz-di,int(Lz/di)):
         #place the inner ring of lipids
         for m in range(ni):
@@ -51,7 +51,7 @@ def cylindricalBilayer(system, r, z0=2.0, ao=1.163, ai=None, verbose=False):
             inPos.append(pos)
             inAngle.append([np.pi/2.,np.pi+(m*dthetai)])
     
-    if verbose: print("Placing Outer Leaflet")
+    if verbose: print("Calculating Outer Leaflet Positions")
     for z in np.linspace(0,Lz-do,int(Lz/do)):
         #place outer ring of lipids
         for m in range(no):
@@ -124,7 +124,7 @@ def buckledBilayer(system, L, ds1=1.1, ds2=1.1, z0=2.0, verbose=False):
     #Lower Leaflet
     z0 = -z0
     for Y in Y2:
-        #Stepping along outer arc length
+        #Stepping along inner arc length
         for S in S2:
             #Figure out how far along midplane arc length we are
             s = root(lambda t: t - S - z0*psi(t,lam,m), S).x[0]
