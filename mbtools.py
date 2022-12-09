@@ -1,4 +1,5 @@
 import numpy as np
+import espressomd
 import scipy.special as sp
 from scipy.optimize import root
 
@@ -10,10 +11,64 @@ from Lipid import Lipid
 #
 #############################################################
 
-# Note: this will place the requested number of lipids in a
-#       membrane configuration with the requested radius. This
-#       does not mean the membrane will keep this radius.
+
+def flatBilayer(system, nTop, nBot=None, z0=2.0, verbose=False):
+    """
+    Create a flat periodic bilayer in the xy-plane, centered
+    in the middle of the box in the z-direction.
+    
+    Required Arguments:
+    system -- the espresso system
+    nTop   -- number of lipids in upper leaflet
+    
+    Keyword Arguments:
+    nBot    -- number of lipids to place in lower leaflet. defaults to nTop
+    z0      -- distance from bilayer midsurface to lipid midpoints
+    verbose -- boolean for extra text output
+    """
+    
+    if(nBot is None):
+        nBot = nTop
+    
+    Lx  = system.box_l[0]
+    Ly  = system.box_l[1]
+    Lz  = system.box_l[2]
+    
+    sites = rectGrid(Lx, Ly, nTop, nBot)
+    
+    uAngle = np.array([[0.,0.]]*len(sites[0]))
+    dAngle = np.array([[np.pi,0.]]*len(sites[0]))
+    
+    uPos = []
+    dPos = []
+    
+    if verbose: print("Generating {} lipid sites in top leaflet".format(len(sites[0])))
+    for site in sites[0]:
+        uPos.append( [site[0], site[1], (Lz/2.) + z0] )
+    
+    if verbose: print("Generating {} lipid sites in bottom leaflet".format(len(sites[1])))
+    for site in sites[1]:
+        dPos.append( [site[0], site[1], (Lz/2.) - z0] )
+    
+    return np.array(uPos), np.array(dPos), uAngle, dAngle
+
 def cylindricalBilayer(system, r, numOut, numIn, z0o=2.0, z0i=2.0, verbose=False):
+    """
+    Create a cylindrical tether bilayer periodic in the z-direction. Note: there is
+    no guarantee the tether will keep the radius initially specified.
+    
+    Required Arguments:
+    system -- the espresso system
+    r      -- tether radius
+    numOut -- number of lipids to place in outer leaflet
+    numIn  -- number of lipids to place in inner leaflet
+    
+    Keyword Arguments:
+    z0o     -- distance from bilayer midsurface to outer leaflet lipid midpoints
+    z0i     -- distance from bilayer midsurface to inner leaflet lipid midpoints
+    verbose -- boolean for extra text output
+    """
+    
     Lx  = system.box_l[0]
     Ly  = system.box_l[1]
     Lz  = system.box_l[2]
@@ -52,10 +107,22 @@ def cylindricalBilayer(system, r, numOut, numIn, z0o=2.0, z0i=2.0, verbose=False
     return np.array(outPos), np.array(inPos), np.array(outAngle), np.array(inAngle)
 
 
-# Creates bilayer buckled in x-direction of (approximately) total length L.
-# arc-len increments ds1, ds2 allow the user to specify different lipid spacings
-# for each leaflet, allowing for the creation of number-asymmetric membranes
 def buckledBilayer(system, L, nTop, nBot=None, z0=2.0, verbose=False):
+    """
+    Create a bilayer buckled in the x-direction, with (approximate)
+    total length L.
+    
+    Required Arguments:
+    system -- the espresso system
+    L      -- membrane length along buckle
+    nTop   -- number of lipids to place in upper leaflet
+    
+    Keyword Arguments:
+    nBot    -- number of lipids to place in lower leaflet. defaults to nTop
+    z0      -- distance from bilayer midsurface to lipid midpoints
+    verbose -- boolean for extra text output
+    """
+    
     if nBot == None:
         nBot = nTop
     
@@ -124,35 +191,14 @@ def buckledBilayer(system, L, nTop, nBot=None, z0=2.0, verbose=False):
     return np.array(uPos), np.array(dPos), np.array(uAngle), np.array(dAngle)
 
 
-def flatBilayer(system, numA, numB=None, verbose=False, z0=2.0):
-    if(numB is None):
-        numB = numA
-    
-    Lx  = system.box_l[0]
-    Ly  = system.box_l[1]
-    Lz  = system.box_l[2]
-    
-    sites = rectGrid(Lx, Ly, numA, numB)
-    
-    uAngle = np.array([[0.,0.]]*len(sites[0]))
-    dAngle = np.array([[np.pi,0.]]*len(sites[0]))
-    
-    uPos = []
-    dPos = []
-    
-    if verbose: print("Generating {} lipid sites in top leaflet".format(len(sites[0])))
-    for site in sites[0]:
-        uPos.append( [site[0], site[1], (Lz/2.) + z0] )
-    
-    if verbose: print("Generating {} lipid sites in bottom leaflet".format(len(sites[1])))
-    for site in sites[1]:
-        dPos.append( [site[0], site[1], (Lz/2.) - z0] )
-    
-    return np.array(uPos), np.array(dPos), uAngle, dAngle
-
-
-# generate rectangular grids of sites for two layers
 def rectGrid(Lx, Ly, numA, numB):
+    """
+    Generate rectangular grid of sites for the two leaflets.
+    
+    This is primarily a helper routine for the other geometry
+    setup functions.
+    """
+    
     sites = []
     
     for n in [numA, numB]:
@@ -181,8 +227,10 @@ def rectGrid(Lx, Ly, numA, numB):
     
     return sites
 
-# Place lipids according to generated geometry
+
 def placeLipids(ulipids, dlipids, uPos, dPos, uAngle, dAngle):
+    """Place lipids into generated sites at specified angles."""
+    
     if (len(ulipids) != len(uPos)) or (len(ulipids) != len(uAngle)):
         print("Mismatch between number of lipids and number of sites")
     if (len(dlipids) != len(dPos)) or (len(dlipids) != len(dAngle)):
@@ -198,6 +246,47 @@ def placeLipids(ulipids, dlipids, uPos, dPos, uAngle, dAngle):
         dlipids[i].rotate([0,1,0], dAngle[i][0])
         dlipids[i].rotate([0,0,1], dAngle[i][1])
 
+
+def springBondStructure(system,particles,spring_k,cutoff):
+    """
+    Bond together a collection of particles with Harmonic
+    bonds of spring constant spring_k, where every particle
+    is bonded to all neighbors within the cutoff distance.
+    NOTE: This method is intended to be used on an initial
+    configuration of particles that are within cutoff
+    distance of one another in *absolute coordinates*, the
+    minimum image distance is not used in this routine
+    
+    Required Arguments:
+    system    -- the espresso system
+    particles -- list of espresso particle handles to be bonded together
+    spring_k  -- harmonic bond spring constant
+    cutoff    -- neighbor-bonding cutoff distance
+    """
+    
+    for p in particles:
+        # find neighbors within cutoff dist
+        # NOTE: this assumes the particles are actually close
+        #       (i.e., does not calculate minimum image dist)
+        #       (this should be true of initial config)
+        nblist = []
+        for p2 in particles:
+            if (p != p2) and (np.linalg.norm(p.pos-p2.pos) < cutoff):
+                nblist.append(p2)
+        
+        for nbp in nblist:
+            # get ids of particles neighbor already bonded to
+            nb_bonded_to = [b[1] for b in nbp.bonds]
+            
+            # if we're already bonded, go on to next neighbor
+            if p.id in nb_bonded_to:
+                pass
+            else:
+                r = np.linalg.norm(p.pos-nbp.pos)
+                bond = espressomd.interactions.HarmonicBond(k=spring_k, r_0=r)
+                system.bonded_inter.add(bond)
+                p.add_bond((bond,nbp.id))
+
 #############################################################
 #
 # Analysis
@@ -205,6 +294,14 @@ def placeLipids(ulipids, dlipids, uPos, dPos, uAngle, dAngle):
 #############################################################
 
 def stray(system, lipid):
+    """
+    Determine if a lipid has strayed from the bilayer.
+    All this function does is check whether there are
+    more than 5 beads within 3 sigma of the lipid's
+    headbead, which is a totally arbitrary metric, but
+    is good enough in most situations.
+    """
+    
     nbhood = system.analysis.nbhood(lipid.getPos("Head"), r_catch = 3.0)
     if(len(nbhood) > 5):
         return False
@@ -212,9 +309,12 @@ def stray(system, lipid):
         return True
 
 
-# Analyze the radius of the cylindrical lipid structure oriented
-# along the z-axis (assuming homogeneous)
 def cylinderRadius(system, lipids, verbose = False):
+    """
+    Calculate the average radius of a cylindrical tether
+    oriented parallel to the z direction.
+    """
+    
     # First, calculate (x,y) location of Center Of Mass
     com = np.array([0.,0.,0.])
     num_mol = 0
@@ -234,11 +334,11 @@ def cylinderRadius(system, lipids, verbose = False):
     
     for l in lipids:
         if(not stray(system, l)):
-            # tail to head vector, only keeping (x,y)
+            # tail-to-head vector, only keeping (x,y)
             tth = np.array(l.getPos("Head") - l.getPos("Tail") )[:2]
-            #com to lipid vector
+            #CoM to lipid midpoint vector
             r = l.getPos()[:2] - com
-            # dot r with tth to determine leaflet orientation
+            # dot r with tth to determine which leaflet based on orientation
             if(np.dot(tth,r) > 0):
                 r_outer += np.linalg.norm(r)
                 num_outer += 1
@@ -255,28 +355,47 @@ def cylinderRadius(system, lipids, verbose = False):
     return R
 
 
-# Determine in which leaflet lipid species are located
-# Assumes flat membrane with surface normal in z direction
 def leafletContent(system, lipids, typeA, typeB):
+    """
+    Determine in which leaflet lipid species are located.
+    Assumes flat membrane with surface normal in z direction.
+    Leaflet of residence is determined purely from lipid
+    orientation relative to z direction, so the numbers
+    reported should only be regarded as approximate.
+    
+    Required Arguments:
+    system -- espresso system
+    lipids -- list of lipid handles
+    typeA  -- type dictionary for type A lipids
+    typeB  -- type dictionary for type B lipids
+    
+    Returns a tuple containing:
+    topA   -- number of A-lipids in upper leaflet
+    botA   -- number of A-lipids in lower leaflet
+    topB   -- number of B-lipids in upper leaflet
+    botB   -- number of B-lipids in lower leaflet
+    nStray -- number of stray lipids
+    """
+    
     topA   = 0
     topB   = 0
     botA   = 0
     botB   = 0
     nStray = 0
-
+    
     unitZ = np.array([0,0,1])
 
     for l in lipids:
         if(not stray(system, l)):
             tth = np.array(l.getPos("Head") - l.getPos("Tail") )
             x = np.dot(tth, unitZ)
-
+            
             if x < 0: # it is in the bottom
                 if l.type == typeA:
                     botA += 1
                 elif l.type == typeB:
                     botB += 1
-
+            
             if x > 0: # it is in the top
                 if l.type == typeA:
                     topA += 1
@@ -284,5 +403,5 @@ def leafletContent(system, lipids, typeA, typeB):
                     topB += 1
         else:
             nStray += 1
-
+    
     return (topA, botA, topB, botB, nStray)

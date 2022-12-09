@@ -1,4 +1,3 @@
-from __future__ import print_function
 import sys
 import os
 import time
@@ -13,7 +12,7 @@ from Lipid import Lipid
 # Extra text output
 verb = True
 
-jobname = "template"
+jobname = "flat_flipfixed"
 
 # System parameters
 #############################################################
@@ -30,6 +29,7 @@ warm_tstep  = 0.0005
 warm_steps  = 10
 min_dist    = 0.90
 
+# Cooke lipid model parameters
 bhh = 0.95
 bht = 0.95
 btt = 1.
@@ -42,36 +42,42 @@ cshift = 1./4.
 wc = 1.6
 
 def main():
-    # Set Up
     #############################################################
-    system = espressomd.System(box_l = [12.4,12.4,20.0]) #periodic BC by default
+    # Set Up                                                    #
+    #############################################################
+    system = espressomd.System(box_l = [12.2,12.2,20.0]) #periodic BC by default
     system.set_random_state_PRNG()
     system.time_step = warm_tstep
     system.cell_system.skin = skin
     
-    #Membrane
-    ############################################################
+    #############################################################
+    # Membrane                                                  #
+    #############################################################
     typeA = {"Head":0,"Mid1":2,"Mid2":2,"Tail":1}
     typeB = {"Head":0,"Mid1":3,"Mid2":3,"Tail":1}
     numA = 128
     numB = 128
     
-    uPos, dPos, uAngle, dAngle = flatBilayer(system, numA=numA, numB=numB, verbose=verb, z0=2.0)
-    # = cylindricalBilayer(system, r, z0=2.0, ao=1.163, ai=None, verbose=False)
-    # = buckledBilayer(system, L, ds1=1.1, ds2=1.1, z0=2.0, verbose=False)
+    uPos, dPos, uAngle, dAngle = flatBilayer(system, nTop=numA, nBot=numB, z0=2.0, verbose=verb)
+    # to set up other membrane geometries, replace the above with other setup functions:
+    # = cylindricalBilayer(system, r, numOut, numIn, z0o=2.0, z0i=2.0, verbose=False)
+    # = buckledBilayer(system, L, nTop, nBot=None, z0=2.0, verbose=False)
     
+    # Create lists of lipid handles of desired types
     ulipids = [Lipid(system,lipidType=typeA) for i in range(numA)]
     dlipids = [Lipid(system,lipidType=typeB) for i in range(numB)]
     
     placeLipids(ulipids, dlipids, uPos, dPos, uAngle, dAngle)
     
+    # combine lipid handles into single array
     lipids = ulipids + dlipids
     
     if verb:
         print("Total number of lipids: " + str(len(lipids)) )
         print("kT={}".format(temperature))
     
-    # Non bonded Interactions between the beads
+    #############################################################
+    # Non bonded Interactions between the lipid beads           #
     #############################################################
 
     system.non_bonded_inter[0, 0].lennard_jones.set_params(
@@ -127,9 +133,9 @@ def main():
     with open(jobname+"/trajectory.vtf", "w") as vtf_fp, open(jobname+"/energy.txt","w") as en_fp, \
         open(jobname+"/box.txt","w") as box_fp, open(jobname+"/flipflop.txt","w") as ff_fp:
         
-        # write structure block as header
+        # write structure block header
         vtf.writevsf(system, vtf_fp)
-        # write initial positions as coordinate block
+        # write initial position coordinate block
         vtf.writevcf(system, vtf_fp)
         #NOTE: WRITING INITIAL CONFIG FIRST
         
@@ -142,8 +148,8 @@ def main():
             print("Proceeding to main integration if minimum distance > {} sigma".format(min_dist) )
         
         # set the integrator to capped gradient descent
-        system.integrator.set_steepest_descent(f_max=0, gamma=10,
-                                       max_displacement=min_dist*0.01)
+        system.integrator.set_steepest_descent(f_max=0, gamma=10, max_displacement=min_dist*0.01)
+        
         # gradient descent until particles are separated by at least min_dist
         act_min_dist = system.analysis.min_dist()
         while act_min_dist < min_dist:
@@ -151,7 +157,7 @@ def main():
             act_min_dist = system.analysis.min_dist()
             if verb: print("Running steepest descent warm-up, current min_dist = {}".format(act_min_dist))
         
-        system.integrator.set_vv() # Switch to velocity-verlet integrator
+        system.integrator.set_vv()   # Switch to velocity-verlet integrator
         system.time_step = time_step # Switch to main integration time step
         
         if verb:
@@ -185,13 +191,15 @@ def main():
             system.integrator.run(integrator_steps)
             
             if(i % sampling_interval == 0):
+                # Write coordinates out to trajectory file
                 vtf.writevcf(system, vtf_fp)
-                vtf_fp.write("unitcell {} {} {}\n".format(*np.copy(system.box_l)) )
+                # Write box into trajectory timestep
+                vtf_fp.write("unitcell {} {} {}\n".format(*system.box_l) )
                 
                 e = system.analysis.energy()
                 en_fp.write("{},{},{},{}\n".format(e["total"],e["kinetic"],e["bonded"],e["non_bonded"]))
                 
-                box_fp.write("{},{},{}\n".format(*np.copy(system.box_l)) )
+                box_fp.write("{},{},{}\n".format(*system.box_l) )
                 
                 f = leafletContent(system, lipids, typeA, typeB)
                 ff_fp.write("{},{},{},{},{}\n".format(*f))
