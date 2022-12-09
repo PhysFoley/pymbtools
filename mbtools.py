@@ -10,54 +10,44 @@ from Lipid import Lipid
 #
 #############################################################
 
-# Note: this will attempt to make a cylindrical membrane with the requested
-#       radius. However, the lipid placement scheme is very rudimentary, and
-#       the actual equilibrium radius of the cylinder will almost always be
-#       slightly different from the requested r (check with cylinderRadius() )
-def cylindricalBilayer(system, r, z0=2.0, ao=1.163, ai=None, verbose=False):
-    if ai == None:
-        ai = ao
-
-    #initial lipid spacing (linear dimension)
-    do = np.sqrt(ao)
-    di = np.sqrt(ai)
+# Note: this will place the requested number of lipids in a
+#       membrane configuration with the requested radius. This
+#       does not mean the membrane will keep this radius.
+def cylindricalBilayer(system, r, numOut, numIn, z0o=2.0, z0i=2.0, verbose=False):
+    Lx  = system.box_l[0]
+    Ly  = system.box_l[1]
+    Lz  = system.box_l[2]
     
-    #radius to inner and outer leaflet
-    ri = r - z0
-    ro = r + z0
-    
-    #number of lipids to place in inner and outer leaflets
-    ni = int(2.*np.pi*ri/di)
-    no = int(2.*np.pi*ro/do)
-    
-    #angular spacing for inner and outer lipids
-    dthetai = 2.*np.pi/ni
-    dthetao = 2.*np.pi/no
-    
-    Lx = system.box_l[0]
-    Ly = system.box_l[1]
-    Lz = system.box_l[2]
+    # first, create a sites on a rectangular grid
+    # the first coord in this grid wraps around the cylinder
+    # the second coord is along the axial (z) direction
+    sites = rectGrid(2.0*np.pi*r, Lz, numOut, numIn)
     
     outPos = []
-    inPos = []
+    inPos  = []
+    
     outAngle = []
-    inAngle = []
+    inAngle  = []
     
-    if verbose: print("Calculating Inner Leaflet Positions")
-    for z in np.linspace(0,Lz-di,int(Lz/di)):
-        #place the inner ring of lipids
-        for m in range(ni):
-            pos = np.array([(Lx/2.)+(ri*np.cos(m*dthetai)),(Ly/2.)+(ri*np.sin(m*dthetai)),z])
-            inPos.append(pos)
-            inAngle.append([np.pi/2.,np.pi+(m*dthetai)])
+    if verbose: print(f"Calculating Outer Leaflet Configuration for {numOut} Lipids")
+    for site in sites[0]:
+        s = site[0]
+        z = site[1]
+        phi = s/r
+        x = (r+z0o)*np.cos(phi)
+        y = (r+z0o)*np.sin(phi)
+        outPos.append( [(Lx/2.0)+x, (Ly/2.0)+y, z] )
+        outAngle.append( [np.pi/2.0, phi] )
     
-    if verbose: print("Calculating Outer Leaflet Positions")
-    for z in np.linspace(0,Lz-do,int(Lz/do)):
-        #place outer ring of lipids
-        for m in range(no):
-            pos = np.array([(Lx/2.)+(ro*np.cos(m*dthetao)),(Ly/2.)+(ro*np.sin(m*dthetao)),z])
-            outPos.append(pos)
-            outAngle.append([np.pi/2.,m*dthetao])
+    if verbose: print(f"Calculating Inner Leaflet Configuration {numIn} Lipids")
+    for site in sites[1]:
+        s = site[0]
+        z = site[1]
+        phi = s/r
+        x = (r-z0i)*np.cos(phi)
+        y = (r-z0i)*np.sin(phi)
+        inPos.append( [(Lx/2.0)+x, (Ly/2.0)+y, z] )
+        inAngle.append( [np.pi/2.0, np.pi+phi] )
     
     return np.array(outPos), np.array(inPos), np.array(outAngle), np.array(inAngle)
 
@@ -65,7 +55,10 @@ def cylindricalBilayer(system, r, z0=2.0, ao=1.163, ai=None, verbose=False):
 # Creates bilayer buckled in x-direction of (approximately) total length L.
 # arc-len increments ds1, ds2 allow the user to specify different lipid spacings
 # for each leaflet, allowing for the creation of number-asymmetric membranes
-def buckledBilayer(system, L, ds1=1.1, ds2=1.1, z0=2.0, verbose=False):
+def buckledBilayer(system, L, nTop, nBot=None, z0=2.0, verbose=False):
+    if nBot == None:
+        nBot = nTop
+    
     #truncated power series approximation for m, see Hu et al. 2013 JCP
     def M(g):
         return g - (0.125*np.power(g,2)) - (0.03125*np.power(g,3)) - (0.0107421875*np.power(g,4))
@@ -79,8 +72,6 @@ def buckledBilayer(system, L, ds1=1.1, ds2=1.1, z0=2.0, verbose=False):
     def psi(s, lam, m):
         return 2*np.arcsin(np.sqrt(m)*sp.ellipj(s/lam,m)[0])
     
-    dy1 = ds1
-    dy2 = ds2
     Lx = system.box_l[0]
     Ly = system.box_l[1]
     Lz = system.box_l[2]
@@ -91,11 +82,7 @@ def buckledBilayer(system, L, ds1=1.1, ds2=1.1, z0=2.0, verbose=False):
     m = M((L-Lx)/L)
     lam = L/(4*sp.ellipk(m))
     
-    Y1 = np.linspace(0,Ly-dy1,int(np.floor(Ly/dy1)))
-    Y2 = np.linspace(0,Ly-dy2,int(np.floor(Ly/dy2)))
-    
-    S1 = np.linspace(0,L-ds1,int(np.floor(L/ds1)))
-    S2 = np.linspace(0,L-ds2,int(np.floor(L/ds2)))
+    sites = rectGrid(L, Ly, nTop, nBot)
     
     uPos = []
     dPos = []
@@ -104,18 +91,16 @@ def buckledBilayer(system, L, ds1=1.1, ds2=1.1, z0=2.0, verbose=False):
     
     if verbose: print("Generating Upper Leaflet Geometry")
     #Upper Leaflet
-    for Y in Y1:
-        #Stepping along outer arc length
-        for S in S1:
-            #Figure out how far along midplane arc length we are
-            s = root(lambda t: t - S - z0*psi(t,lam,m), S).x[0]
-            PSI = psi(s, lam, m)
-            
-            X = x(s, lam, m) - z0*np.sin(PSI)
-            Z = z(s, lam, m) + z0*np.cos(PSI) + zOffset
-            
-            uPos.append(np.array([X,Y,Z]))
-            uAngle.append([-PSI,0.])
+    for (S,Y) in sites[0]:
+        #Figure out how far along midplane arc length we are
+        s = root(lambda t: t - S - z0*psi(t,lam,m), S).x[0]
+        PSI = psi(s, lam, m)
+        
+        X = x(s, lam, m) - z0*np.sin(PSI)
+        Z = z(s, lam, m) + z0*np.cos(PSI) + zOffset
+        
+        uPos.append(np.array([X,Y,Z]))
+        uAngle.append([-PSI,0.])
     
     if verbose:
         print("Number of lipid sites in upper leaflet: {}".format(len(uPos)))
@@ -123,18 +108,16 @@ def buckledBilayer(system, L, ds1=1.1, ds2=1.1, z0=2.0, verbose=False):
     
     #Lower Leaflet
     z0 = -z0
-    for Y in Y2:
-        #Stepping along inner arc length
-        for S in S2:
-            #Figure out how far along midplane arc length we are
-            s = root(lambda t: t - S - z0*psi(t,lam,m), S).x[0]
-            PSI = psi(s, lam, m)
-            
-            X = x(s, lam, m) - z0*np.sin(PSI)
-            Z = z(s, lam, m) + z0*np.cos(PSI) + zOffset
-            
-            dPos.append(np.array([X,Y,Z]))
-            dAngle.append([np.pi-PSI,0.])
+    for (S,Y) in sites[1]:
+        #Figure out how far along midplane arc length we are
+        s = root(lambda t: t - S - z0*psi(t,lam,m), S).x[0]
+        PSI = psi(s, lam, m)
+        
+        X = x(s, lam, m) - z0*np.sin(PSI)
+        Z = z(s, lam, m) + z0*np.cos(PSI) + zOffset
+        
+        dPos.append(np.array([X,Y,Z]))
+        dAngle.append([np.pi-PSI,0.])
     
     if verbose: print("Number of lipid sites in lower leaflet: {}".format(len(dPos)))
     
@@ -149,6 +132,27 @@ def flatBilayer(system, numA, numB=None, verbose=False, z0=2.0):
     Ly  = system.box_l[1]
     Lz  = system.box_l[2]
     
+    sites = rectGrid(Lx, Ly, numA, numB)
+    
+    uAngle = np.array([[0.,0.]]*len(sites[0]))
+    dAngle = np.array([[np.pi,0.]]*len(sites[0]))
+    
+    uPos = []
+    dPos = []
+    
+    if verbose: print("Generating {} lipid sites in top leaflet".format(len(sites[0])))
+    for site in sites[0]:
+        uPos.append( [site[0], site[1], (Lz/2.) + z0] )
+    
+    if verbose: print("Generating {} lipid sites in bottom leaflet".format(len(sites[1])))
+    for site in sites[1]:
+        dPos.append( [site[0], site[1], (Lz/2.) - z0] )
+    
+    return np.array(uPos), np.array(dPos), uAngle, dAngle
+
+
+# generate rectangular grids of sites for two layers
+def rectGrid(Lx, Ly, numA, numB):
     sites = []
     
     for n in [numA, numB]:
@@ -175,28 +179,13 @@ def flatBilayer(system, numA, numB=None, verbose=False, z0=2.0):
         
         sites.append(s)
     
-    uAngle = np.array([[0.,0.]]*len(sites[0]))
-    dAngle = np.array([[np.pi,0.]]*len(sites[0]))
-    
-    uPos = []
-    dPos = []
-    
-    if verbose: print("Generating {} lipid sites in top leaflet".format(len(sites[0])))
-    for site in sites[0]:
-        uPos.append( [site[0], site[1], (Lz/2.) + z0] )
-    
-    if verbose: print("Generating {} lipid sites in bottom leaflet".format(len(sites[1])))
-    for site in sites[1]:
-        dPos.append( [site[0], site[1], (Lz/2.) - z0] )
-    
-    return np.array(uPos), np.array(dPos), uAngle, dAngle
-
+    return sites
 
 # Place lipids according to generated geometry
 def placeLipids(ulipids, dlipids, uPos, dPos, uAngle, dAngle):
     if (len(ulipids) != len(uPos)) or (len(ulipids) != len(uAngle)):
         print("Mismatch between number of lipids and number of sites")
-    if (len(dlipids) != len(dPos)) or (len(dlipids) != len(uAngle)):
+    if (len(dlipids) != len(dPos)) or (len(dlipids) != len(dAngle)):
         print("Mismatch between number of lipids and number of sites")
     
     for i in range(len(ulipids)):
