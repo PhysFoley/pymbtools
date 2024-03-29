@@ -19,7 +19,7 @@ jobname = "flat_3bead"
 # Main simulation parameters:
 skin          = 0.4
 time_step     = 0.005
-temperature       = 1.4
+temperature       = 1.1
 integrator_steps  = 200
 sampling_interval = 10
 iterations        = 5000
