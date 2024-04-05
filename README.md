@@ -9,8 +9,6 @@ Detailed information about the Cooke lipid model can be found in the following p
 
 `Lipid.py` and `mbtools.py` comprise the "pymbtools" suite of tools. `Lipid.py` contains the definiton for the `Lipid` class and `mbtools.py` is a collection of functions for assembling lipid bilayers in various geometries, along with a few rudimentary analysis functions and a method for bonding together particles into large-scale rigid structures.
 
-`run.sh` is a very basic sketch of a SLURM batch script for running a simulation with mbtools.
-
 The template directory contains 5 example scripts that run short simulations demonstrating the functionality of pymbtools.
 
 * `flat_3bead.py` : The simplest case. A flat, 3-bead (original) Cooke model membrane.
